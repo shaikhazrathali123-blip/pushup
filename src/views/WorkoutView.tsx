@@ -41,6 +41,9 @@ interface WorkoutViewProps {
   onCancelWorkout: () => void;
 }
 
+// Mobile-vertical-only build: we no longer support/branch on landscape or
+// desktop layouts. The rear/front camera toggle is the only "facing"
+// concept we need.
 type CameraFacing = 'user' | 'environment';
 
 interface VideoDimensions {
@@ -85,11 +88,16 @@ const DEFAULT_ANGLES: PoseAngles = {
   visibilityScore: 0,
 };
 
+// Clarified wording: "sideways" previously read like an instruction to
+// rotate the phone. This app is portrait/vertical-only now, so the copy
+// is explicit that the PHONE stays upright and it's the PERSON who should
+// stand in profile (so the elbow angle is measurable) and step back far
+// enough for their full body to fit in a vertical frame.
 const DEFAULT_FEEDBACK: FormFeedback = {
   isValidPlank: true,
   isGoodDepth: false,
   isFullExtension: true,
-  message: 'Position camera sideways to capture full body',
+  message: 'Keep phone upright, stand side-on & step back so your full body is in frame',
   type: 'info',
   score: 95,
 };
@@ -343,7 +351,14 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
     // dropped frames / stuck feedback on mobile).
   }, [settings.targetDepthAngle, settings.mirrorCamera, handleRepCounted, handleDownTriggered]);
 
-  // Start Camera Stream
+  // Start Camera Stream — MOBILE PORTRAIT ONLY.
+  // We deliberately do NOT branch on window.innerHeight/innerWidth or ask
+  // for a 16:9 landscape frame anymore. Since this build only targets phones
+  // held upright, we always request a tall (9:16) stream. This removes a
+  // real mobile bug: on some Android browsers, asking for a landscape ideal
+  // width/height while the device is physically portrait caused the browser
+  // to negotiate a stream that then got cropped oddly by object-cover,
+  // which visually looked like "pose detection isn't finding my body."
   const startCamera = useCallback(async (): Promise<void> => {
     try {
       streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -355,18 +370,12 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
         return;
       }
 
-      // Detect portrait vs landscape so we ask for a resolution that
-      // actually matches the device instead of forcing a landscape frame
-      // onto a portrait phone screen (a common cause of a video element
-      // that never reaches readyState >= 2 on mobile).
-      const isPortrait: boolean = window.innerHeight >= window.innerWidth;
-
       const constraints: MediaStreamConstraints = {
         video: {
           facingMode: cameraFacing,
-          width: { ideal: isPortrait ? 720 : 1280 },
-          height: { ideal: isPortrait ? 1280 : 720 },
-          aspectRatio: { ideal: isPortrait ? 9 / 16 : 16 / 9 },
+          width: { ideal: 720 },
+          height: { ideal: 1280 },
+          aspectRatio: { ideal: 9 / 16 },
           frameRate: { ideal: 30 },
         },
         audio: false,
@@ -570,7 +579,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
   };
 
   return (
-    <div className="relative w-full min-h-[100dvh] flex flex-col bg-[#0A0A0A] text-white overflow-hidden pb-24">
+    <div className="relative w-full min-h-[110dvh] flex flex-col bg-[#0A0A0A] text-white overflow-hidden pb-24">
       {/* Top Session Stats Bar */}
       <div className="px-4 py-2.5 bg-[#0D0D0D]/90 backdrop-blur-md border-b border-[#1A1A1A] flex items-center justify-between z-20">
         <div className="flex items-center gap-2">
@@ -619,8 +628,14 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
         </div>
       </div>
 
-      {/* Main Camera / Pose Stage */}
-      <div className="relative flex-1 w-full max-w-xl mx-auto flex flex-col justify-center items-center overflow-hidden bg-black">
+      {/* Main Camera / Pose Stage — fills remaining vertical space on the
+          phone. Video and canvas now share IDENTICAL sizing classes
+          (both `absolute inset-0 w-full h-full object-cover`), so the
+          skeleton overlay always lines up with the visible video pixels.
+          Previously the video was separately capped at max-h-[62vh] while
+          the canvas filled the whole parent — on a portrait phone that
+          mismatch pushed the overlay out of alignment with the real image. */}
+      <div className="relative flex-1 w-full mx-auto overflow-hidden bg-black">
         {/* Live Video Feed */}
         <video
           ref={videoRef}
@@ -628,17 +643,19 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
           muted
           autoPlay
           onLoadedMetadata={handleLoadedMetadata}
-          className={`w-full h-full object-cover max-h-[62vh] ${
+          className={`absolute inset-0 w-full h-full object-cover ${
             settings.mirrorCamera && cameraFacing === 'user' ? 'scale-x-[-1]' : ''
           }`}
         />
 
-        {/* Skeleton Canvas Overlay — sized to the real camera resolution */}
+        {/* Skeleton Canvas Overlay — sized to the real camera resolution,
+            and now positioned/sized identically to the video above it. */}
         <canvas
           ref={canvasRef}
           width={videoDims.width}
           height={videoDims.height}
-  className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"        />
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+        />
 
         {/* Down Glow Flare on bottom depth reached */}
         {downPulseAnimation && (
@@ -689,7 +706,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
         {/* Live Form Guidance Pill (Top Center) */}
         <div className="absolute top-3 left-0 right-0 z-20 flex justify-center px-4 pointer-events-none">
           <div
-            className={`px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 backdrop-blur-md border transition-all shadow-lg ${
+            className={`px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 backdrop-blur-md border transition-all shadow-lg max-w-[90%] ${
               feedback.type === 'good'
                 ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-300'
                 : feedback.type === 'warning'
@@ -698,13 +715,13 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
             }`}
           >
             {feedback.type === 'good' ? (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             ) : feedback.type === 'warning' ? (
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             ) : (
-              <Info className="w-3.5 h-3.5 text-[#F27D26]" />
+              <Info className="w-3.5 h-3.5 text-[#F27D26] shrink-0" />
             )}
-            <span>{feedback.message}</span>
+            <span className="text-center leading-snug">{feedback.message}</span>
           </div>
         </div>
 
@@ -716,7 +733,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
               Valid Reps
             </div>
             <div
-              className={`font-mono-stat text-6xl sm:text-7xl font-black text-white leading-none tracking-tight drop-shadow-lg transition-transform ${
+              className={`font-mono-stat text-6xl font-black text-white leading-none tracking-tight drop-shadow-lg transition-transform ${
                 repPulseAnimation ? 'scale-125 text-[#F27D26]' : 'scale-100'
               }`}
             >
@@ -778,7 +795,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
             type="button"
             id="btn-manual-rep-tap"
             onClick={handleManualAddRep}
-            className="col-span-4 py-3.5 px-2 rounded-2xl bg-[#161616] hover:bg-[#202020] border border-[#222222] text-gray-200 font-bold text-xs sm:text-sm flex flex-col items-center justify-center gap-1 active:scale-95 transition-all"
+            className="col-span-4 py-3.5 px-2 rounded-2xl bg-[#161616] hover:bg-[#202020] border border-[#222222] text-gray-200 font-bold text-xs flex flex-col items-center justify-center gap-1 active:scale-95 transition-all"
           >
             <Plus className="w-4 h-4 text-[#F27D26]" />
             <span>Tap +1 Rep</span>
@@ -790,7 +807,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
             id="btn-finish-set"
             onClick={handleFinishCurrentSet}
             disabled={currentSetReps === 0}
-            className={`col-span-4 py-3.5 px-2 rounded-2xl border font-bold text-xs sm:text-sm flex flex-col items-center justify-center gap-1 active:scale-95 transition-all ${
+            className={`col-span-4 py-3.5 px-2 rounded-2xl border font-bold text-xs flex flex-col items-center justify-center gap-1 active:scale-95 transition-all ${
               currentSetReps > 0
                 ? 'bg-[#161616] hover:bg-[#202020] border-[#F27D26]/40 text-[#F27D26]'
                 : 'bg-[#111111] border-[#1A1A1A] text-gray-600 cursor-not-allowed'
@@ -805,7 +822,7 @@ export const WorkoutView: React.FC<WorkoutViewProps> = ({
             type="button"
             id="btn-complete-workout"
             onClick={handleCompleteWorkout}
-            className="col-span-4 py-3.5 px-2 rounded-2xl bg-[#F27D26] hover:brightness-110 text-black font-bold text-xs sm:text-sm uppercase tracking-wider flex flex-col items-center justify-center gap-1 active:scale-95 transition-all shadow-[0_4px_15px_rgba(242,125,38,0.3)]"
+            className="col-span-4 py-3.5 px-2 rounded-2xl bg-[#F27D26] hover:brightness-110 text-black font-bold text-xs uppercase tracking-wider flex flex-col items-center justify-center gap-1 active:scale-95 transition-all shadow-[0_4px_15px_rgba(242,125,38,0.3)]"
           >
             <Square className="w-4 h-4 fill-black" />
             <span>Finish</span>
