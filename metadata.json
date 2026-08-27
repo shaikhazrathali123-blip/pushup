@@ -1,0 +1,6 @@
+{
+  "name": "PushQuest",
+  "description": "Mobile-first PWA for camera-based push-up tracking with on-device pose detection, streak progression, and Strava-style share stickers.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
